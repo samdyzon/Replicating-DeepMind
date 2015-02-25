@@ -1,0 +1,180 @@
+name: "DeepMind"
+
+layers {
+  name: "frames_input_layer"
+  type: MEMORY_DATA
+  top: "frames"
+  top: "dummy1"
+  memory_data_param {
+    batch_size: 32
+    channels: 4
+    height: 84
+    width: 84
+  }
+}
+
+layers {
+  name: "target_input_layer"
+  type: MEMORY_DATA
+  top: "target"
+  top: "dummy2"
+  memory_data_param {
+    batch_size: 32
+    channels: 18
+    height: 1
+    width: 1
+  }
+}
+
+layers {
+  name: "filter_input_layer"
+  type: MEMORY_DATA
+  top: "filter"
+  top: "dummy3"
+  memory_data_param {
+    batch_size: 32
+    channels: 18
+    height: 1
+    width: 1
+  }
+}
+
+layers {
+  name: "silence_layer"
+  type: SILENCE
+  bottom: "dummy1"
+  bottom: "dummy2"
+  bottom: "dummy3"
+}
+
+layers {
+  name: "conv1"
+  type: CONVOLUTION
+  bottom: "frames"
+  top: "conv1"
+  blobs_lr: 1          # learning rate multiplier for the filters
+  blobs_lr: 2          # learning rate multiplier for the biases
+  weight_decay: 1      # weight decay multiplier for the filters
+  weight_decay: 0      # weight decay multiplier for the biases
+  convolution_param {
+    num_output: 16     # learn 96 filters
+    kernel_size: 8    # each filter is 11x11
+    stride: 4          # step 4 pixels between each filter application
+    weight_filler {
+      type: "gaussian" # initialize the filters from a Gaussian
+      std: 0.01        # distribution with stdev 0.01 (default mean: 0)
+    }
+    bias_filler {
+      type: "constant" # initialize the biases to zero (0)
+      value: 0
+    }
+  }
+}
+
+layers {
+  name: "relu1"
+  type: RELU
+  bottom: "conv1"
+  top: "conv1"
+}
+
+layers {
+  name: "conv2"
+  type: CONVOLUTION
+  bottom: "conv1"
+  top: "conv2"
+  blobs_lr: 1          # learning rate multiplier for the filters
+  blobs_lr: 2          # learning rate multiplier for the biases
+  weight_decay: 1      # weight decay multiplier for the filters
+  weight_decay: 0      # weight decay multiplier for the biases
+  convolution_param {
+    num_output: 32     # learn 96 filters
+    kernel_size: 4    # each filter is 11x11
+    stride: 2          # step 4 pixels between each filter application
+    weight_filler {
+      type: "gaussian" # initialize the filters from a Gaussian
+      std: 0.01        # distribution with stdev 0.01 (default mean: 0)
+    }
+    bias_filler {
+      type: "constant" # initialize the biases to zero (0)
+      value: 0
+    }
+  }
+}
+
+layers {
+  name: "relu2"
+  type: RELU
+  bottom: "conv2"
+  top: "conv2"
+}
+
+layers {
+  name: "ip1"
+  type: INNER_PRODUCT
+  blobs_lr: 1          # learning rate multiplier for the filters
+  blobs_lr: 2          # learning rate multiplier for the biases
+  weight_decay: 1      # weight decay multiplier for the filters
+  weight_decay: 0      # weight decay multiplier for the biases
+  inner_product_param {
+    num_output: 256
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+  bottom: "conv2"
+  top: "ip1"
+}
+
+layers {
+  name: "relu3"
+  type: RELU
+  bottom: "ip1"
+  top: "ip1"
+}
+
+layers {
+  name: "ip2"
+  type: INNER_PRODUCT
+  blobs_lr: 1          # learning rate multiplier for the filters
+  blobs_lr: 2          # learning rate multiplier for the biases
+  weight_decay: 1      # weight decay multiplier for the filters
+  weight_decay: 0      # weight decay multiplier for the biases
+  inner_product_param {
+    num_output: 18
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+  bottom: "ip1"
+  top: "q_values"
+}
+
+layers {
+  name: "eltwise_layer"
+  type: ELTWISE
+  bottom: "q_values"
+  bottom: "filter"
+  top: "filtered_q_values"
+  eltwise_param {
+    operation: PROD
+  }
+}
+
+layers {
+  name: "loss"
+  type: EUCLIDEAN_LOSS
+  bottom: "filtered_q_values"
+  bottom: "target"
+  top: "loss"
+}

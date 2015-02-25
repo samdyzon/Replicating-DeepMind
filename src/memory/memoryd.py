@@ -139,6 +139,10 @@ class MemoryD:
                 state = np.vstack([self.screens[ind_start_window:], self.screens[:ind_end_window]])
             else:
                 state = self.screens[index - 3:index + 1]
+	    #state = np.empty((4, 84, 84), dtype=np.float32)
+	    #s = self.screens[index]
+	    #for i in range(0,4):
+	    #    state[i] = s
 
         # neural network expects flat input and np.ravel does just that
         return np.ravel(state)
@@ -148,5 +152,17 @@ class MemoryD:
         Get last 4 images from the memory. Those images will go as an input for
         the neural network
         """
+
+    def save_minibatch(self,minibatch):
+	"""
+	Save a mini batch to memory, then we can save it to memory
+	"""
+	prestates, actions, rewards, poststates = minibatch
+	
+	np.save('prestates-batch',prestates)
+	np.save('actions-batch',actions)
+	np.save('rewards-batch',rewards)
+	np.save('poststates-batch',poststates)
+	raw_input("Continue...")
 
         return self.get_state(self.count)

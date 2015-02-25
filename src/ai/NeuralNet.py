@@ -3,129 +3,123 @@
 NeuralNet class creates a neural network.
 
 """
-
-from convnet import *
+import os
 import numpy as np
 import time
 from collections import OrderedDict
+from caffe import *
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
-class SimpleDataProvider:
-    dims = None
+class NeuralNet(SGDSolver):
+	
 
-    def __init__(self, data_dir, batch_range=None, init_epoch=1, init_batchnum=None, dp_params=None, test=False):
-        pass
+	#dummy_filters = np.ones((32,18,1,1), dtype=np.float32)
+	dummy_filters = None
 
-    def get_data_dims(self, idx=0):
-        assert self.dims is not None
-        assert idx >= 0 and idx < len(self.dims)
-        return self.dims[idx]
+	def __init__(self, solver_file, model_file, pretrained_file=None, gpu=False):
+		"""
+		Initialize a NeuralNet
+		@param solver_file: path to solver prototxt file
+		@param pretrained_file: path to pretrained model (optional)
+		@param model_file: path to net model
+		@param gpu: run on GPU?
+		"""
+				
+		SGDSolver.__init__(self,solver_file)
 
-    def advance_batch(self):
-        pass
+		if pretrained_file != None:	
+			self.net.copy_from(pretrained_file)
 
-class NeuralNet(ConvNet):
+		if gpu:
+			set_mode_gpu()
+		else:
+			set_mode_cpu()
 
-    def __init__(self, nr_inputs, nr_outputs, layers_file, params_file, output_layer_name):
-        """
-        Initialize a NeuralNet
+		df = np.tile(np.array([1000,1000,0,1000,1000,0,0,0,0,0,0,1000,1000,0,0,0,0,0], dtype=np.float32), (32,1))
+		self.dummy_filters = df.reshape((32,18,1,1))
 
-        @param nr_inputs: number of inputs in data layer
-        @param nr_outputs: number of target values in another data layer
-        @param layers_file: path to layers file
-        @param params_file: path to params file
-        @param output_layer_name: name of the output layer
-        """
+		#print self.dummy_filters[0]
 
-        # Save data parameters
-        self.nr_inputs = nr_inputs
-        self.nr_outputs = nr_outputs
-        SimpleDataProvider.dims = (nr_inputs, nr_outputs)
+	def train(self, inputs, outputs):
+		"""
+		Use the SGDSolver.Solve to optimize the network
 
-        # Save layer parameters
-        self.layers_file = layers_file
-        self.params_file = params_file
-        self.output_layer_name = output_layer_name
+		@param inputs: NxM numpy.ndarray, where N is number of inputs and M is batch size
+		@param outputs: KxM numpy.ndarray, where K is number of outputs and M is batch size
+		@return cost?
+		"""
+
+		#assert inputs.shape[0] == self.nr_inputs
+		#assert outputs.shape[0] == self.nr_outputs
+		#assert inputs.shape[1] == outputs.shape[1]
+		#inputs = image data, outputs = qvalues?
+
+		labels = outputs.reshape((32,18,1,1))
+
+		dummy_labels = np.zeros((32,1,1,1), dtype=np.float32)
+
+		dummy_filters = np.ones((32,18,1,1), dtype=np.float32)
+		d = np.transpose(inputs)
+		data = np.ascontiguousarray(d.reshape((32,4,84,84), order='C'), dtype=np.float32)
+
+		self.net.set_input_arrays_(0, data, dummy_labels)		
+		self.net.set_input_arrays_(1, labels.astype(np.float32), dummy_labels)
+		self.net.set_input_arrays_(2, self.dummy_filters, dummy_labels)
+		
+		cost = self.step(1)
+
+		return cost
+
+	def predict(self, inputs):
+		"""
+		Predict neural network output layer activations for input.
+		@param inputs: NxM numpy.ndarray, where N is number of inputs and M is batch size
+		"""
+		#we're given an 22842 x 32 array of inputs
+		#for each column, create a contiguous array of 4x1x84x84
+		dummy_data = np.zeros((32,18,1,1), dtype=np.float32)
+		dummy_labels = np.zeros((32,1,1,1), dtype=np.float32)
+		dummy_filters = np.ones((32,18,1,1), dtype=np.float32)
+		#print np.shape(inputs)
+
+		if np.shape(inputs)[1] == 1:
+			d = np.transpose(inputs)
+			da = np.ascontiguousarray(d.reshape((1,4,84,84), order='C'), dtype=np.float32)
+			data = np.tile(da, (32,1,1,1))
+
+			self.net.set_input_arrays_(0, data, dummy_labels)
+			self.net.set_input_arrays_(1, dummy_data, dummy_labels)
+			self.net.set_input_arrays_(2, self.dummy_filters, dummy_labels)
+			outputs = self.net.forward()
+			out = self.net.blobs['filtered_q_values'].data[0,:]
+		else:		
+			d = np.transpose(inputs)
+			data = np.ascontiguousarray(d.reshape((32,4,84,84), order='C'), dtype=np.float32)
+			self.net.set_input_arrays_(0, data, dummy_labels)
+			self.net.set_input_arrays_(1, dummy_data, dummy_labels)
+			self.net.set_input_arrays_(2, self.dummy_filters, dummy_labels)
+			outputs = self.net.forward()
+			out = self.net.blobs['filtered_q_values'].data		
+
+
+		#print np.shape(data)
+		#test = raw_input("Press Enter to continue...")
+		#matplotlib to see if it makes sense -> imshow(test[0,2,:])
+		#print np.shape(np.transpose(inputs))
+		#print test[0,2,:]
+		#plt.imshow(data[0,1,:], cmap = cm.Greys_r)
+		#plt.savefig('tessstttyyy.png', dpi=72)
+
+
+		return out
+
+	def get_weight_stats(self):
+		# copy weights from GPU to CPU memory
         
-        # Initialise ConvNet, including self.libmodel
-        op = NeuralNet.get_options_parser()
-        op, load_dic = IGPUModel.parse_options(op)
-        ConvNet.__init__(self, op, load_dic)
+		return None
 
-    def train(self, inputs, outputs):
-        """
-        Train neural net with inputs and outputs.
-
-        @param inputs: NxM numpy.ndarray, where N is number of inputs and M is batch size
-        @param outputs: KxM numpy.ndarray, where K is number of outputs and M is batch size
-        @return cost?
-        """
-
-        assert inputs.shape[0] == self.nr_inputs
-        assert outputs.shape[0] == self.nr_outputs
-        assert inputs.shape[1] == outputs.shape[1]
-
-        # start training in GPU
-        self.libmodel.startBatch([inputs, outputs], 1, False) # second parameter is 'progress', third parameter means 'only test, don't train'
-        # wait until processing has finished
-        cost = self.libmodel.finishBatch()
-        # return cost (error)
-        return cost
-
-    def predict(self, inputs):
-        """
-        Predict neural network output layer activations for input.
-
-        @param inputs: NxM numpy.ndarray, where N is number of inputs and M is batch size
-        """
-        assert inputs.shape[0] == self.nr_inputs
-
-        batch_size = inputs.shape[1]
-        outputs = np.zeros((batch_size, self.nr_outputs), dtype=np.float32)
-
-        # start feed-forward pass in GPU
-        self.libmodel.startFeatureWriter([inputs, outputs.transpose().copy()], [outputs], [self.output_layer_name])
-        # wait until processing has finished
-        self.libmodel.finishBatch()
-
-        # now activations of output layer should be in 'outputs'
-        return outputs
-
-    def get_weight_stats(self):
-        # copy weights from GPU to CPU memory
-        self.sync_with_host()
-        wscales = OrderedDict()
-        for name,val in sorted(self.layers.items(), key=lambda x: x[1]['id']): # This is kind of hacky but will do for now.
-            l = self.layers[name]
-            if 'weights' in l:
-                wscales[l['name'], 'biases'] = (n.mean(n.abs(l['biases'])), n.mean(n.abs(l['biasesInc'])))
-                for i,(w,wi) in enumerate(zip(l['weights'],l['weightsInc'])):
-                    wscales[l['name'], 'weights' + str(i)] = (n.mean(n.abs(w)), n.mean(n.abs(wi)))
-        return wscales
-
-    def save_network(self, epoch):
-        self.epoch = epoch
-        self.batchnum = 1
-        self.sync_with_host()
-        self.save_state().join()
-
-    @classmethod
-    def get_options_parser(cls):
-        op = ConvNet.get_options_parser()
-        #op.delete_option("train_batch_range")
-        #op.delete_option("test_batch_range")
-        #op.delete_option("dp_type")
-        #op.delete_option("data_path")
-        op.options["train_batch_range"].default="0"
-        op.options["test_batch_range"].default="0"
-        op.options["dp_type"].default="image"
-        op.options["data_path"].default="/storage/hpc_kristjan/cuda-convnet4" # TODO: remove this
-        op.options["layer_def"].default="ai/deepmind-layers.cfg"
-        op.options["layer_params"].default="ai/deepmind-params.cfg"
-        #op.options["save_path"].default="."
-        #op.options["gpu"].default="0"
-        op.options["dp_type"].default="simple"
-        op.options["minibatch_size"].default = 32
- 
-        DataProvider.register_data_provider('simple', 'Simple data provider', SimpleDataProvider)
-
-        return op
+	def save_network(self, epoch):
+		self.epoch = epoch
+		self.net.save('ai/models/deepmind_caffe.caffemodel')
+		return None
